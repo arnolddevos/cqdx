@@ -14,18 +14,11 @@ import java.util.concurrent.Executor
 trait CQLActions { this: Qeduce with CQLTypes =>
 
   class Session( val inner: core.Session) {
-    val stmts = MutMap.empty[String, core.PreparedStatement]
-    def executeAsync(s: Statement) = futureStep(inner.executeAsync(s))
-    def close() = inner.close()
-    def prepareAsync(src: String): Process[core.PreparedStatement] = {
-      if(stmts contains src) stmts(src)
-      else {
-        val ps = inner.prepare(src)
-        stmts(src) = ps
-        ps
-      }
-      ???
-    }
+    private val stmts = new Cache(innerPrepare)
+    private def innerPrepare(s: String) = futureStep(inner.prepareAsync(s))
+    def prepare(s: String): Process[core.PreparedStatement] = stmts.request(s)
+    def execute(s: Statement): Process[core.ResultSet] = futureStep(inner.executeAsync(s))
+    def close(): Process[Unit] = futureStep(inner.closeAsync()) >> stop(())
   }
 
   type Context[+A] = Process[A]
@@ -48,14 +41,14 @@ trait CQLActions { this: Qeduce with CQLTypes =>
 
   def action[S](q: Query, f: Reducer[Row, S]): Action[S] = action {
     session =>
-      session.prepareAsync(q.parts.mkString("?")) >>= {
+      session.prepare(q.parts.mkString("?")) >>= {
         statement =>
 
           val prepared = statement.bind()
           for((p, i) <- q.params.zipWithIndex)
             p.sqlType.inject(prepared, i, p.value)
 
-          session.executeAsync(prepared) >>= {
+          session.execute(prepared) >>= {
             result =>
               var s = f.init
               while(! f.isReduced(s) && ! result.isExhausted)
@@ -65,8 +58,8 @@ trait CQLActions { this: Qeduce with CQLTypes =>
       }
   }
 
-  def consumeConnection[A](a: Action[A]): Action[A] = action {
-    c => try { a.run(c) } finally { c.close }
+  def consumeConnection[A](aa: Action[A]): Action[A] = action {
+    c => aa.run(c) >>= { a => c.close >> stop(a) }
   }
 
   object directExecutor extends Executor {

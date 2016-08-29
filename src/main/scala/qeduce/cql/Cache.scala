@@ -8,11 +8,11 @@ import Gate._
 class Cache[S, T](f: S => Process[T]) {
 
   val latch = new KeyedLatch[S, T]
-  val book = new Reservations[S]
+  val reservations = new Reservations[S]
 
   def request(s: S): Process[T] = {
     val cache = latch(s)
-    waitFor(book.take(s)) >>= {
+    waitFor(reservations.take(s)) >>= {
       reserved =>
         if(reserved) waitFor(cache.take)
         else
