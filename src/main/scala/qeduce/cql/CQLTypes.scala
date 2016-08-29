@@ -2,26 +2,11 @@ package qeduce
 package cql
 
 import com.datastax.driver.core
-import scala.collection.mutable.{Map => MutMap}
 
 trait CQLTypes { this: Qeduce =>
 
   type Statement = core.BoundStatement
   type Row = core.Row
-
-  class Session( val inner: core.Session) {
-    val stmts = MutMap.empty[String, core.PreparedStatement]
-    def execute(s: Statement) = inner.execute(s)
-    def close() = inner.close()
-    def prepare(src: String): core.PreparedStatement = {
-      if(stmts contains src) stmts(src)
-      else {
-        val ps = inner.prepare(src)
-        stmts(src) = ps
-        ps
-      }
-    }
-  }
 
   abstract class CQLType[A] extends QueryType[A] {
     def tryExtract =
