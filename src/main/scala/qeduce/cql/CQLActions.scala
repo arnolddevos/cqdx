@@ -50,10 +50,21 @@ trait CQLActions { this: Qeduce with CQLTypes =>
 
           session.execute(prepared) >>= {
             result =>
-              var s = f.init
-              while(! f.isReduced(s) && ! result.isExhausted)
-                s = f(s, result.one())
-              stop(f.complete(s))
+              import result._
+              import f._
+
+              @annotation.tailrec
+              def exhaustPage(s: State): State =
+                if(isReduced(s) || getAvailableWithoutFetching == 0) s
+                else exhaustPage(f(s, one()))
+
+              def loop(s0: f.State): Process[S] = {
+                val s = exhaustPage(s0)
+                if(isReduced(s) || isExhausted) stop(complete(s))
+                else futureStep(fetchMoreResults) >> loop(s)
+              }
+
+              loop(init)
           }
       }
   }
