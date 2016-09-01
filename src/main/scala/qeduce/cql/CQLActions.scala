@@ -4,6 +4,7 @@ package cql
 import transducers.{Reducer, count}
 import flowlib._
 import Process._
+import Generators._
 
 import com.datastax.driver.core
 import scala.collection.mutable.{Map => MutMap}
@@ -13,6 +14,13 @@ import java.util.concurrent.Executor
 
 trait CQLActions { this: Qeduce with CQLTypes =>
 
+  implicit class CQLContext( sc: StringContext) {
+    def cql( ps: QueryValue* ): Query = new Query {
+      val parts = sc.parts
+      val params = ps
+    }
+  }
+
   class Session( val inner: core.Session) {
     private val stmts = new Cache(innerPrepare)
     private def innerPrepare(s: String) = futureStep(inner.prepareAsync(s))
@@ -21,14 +29,19 @@ trait CQLActions { this: Qeduce with CQLTypes =>
     def close(): Process[Unit] = futureStep(inner.closeAsync()) >> stop(())
   }
 
-  type Context[+A] = Process[A]
+  private def bindAndExecute(session: Session, q: Query): Process[core.ResultSet] = {
+    session.prepare(q.parts.mkString("?")) >>= {
+      statement =>
 
-  implicit class CQLContext( sc: StringContext) {
-    def cql( ps: QueryValue* ): Query = new Query {
-      val parts = sc.parts
-      val params = ps
+        val prepared = statement.bind()
+        for((p, i) <- q.params.zipWithIndex)
+          p.sqlType.inject(prepared, i, p.value)
+
+        session.execute(prepared)
     }
   }
+
+  type Context[+A] = Process[A]
 
   def action[A](f: Session => Process[A]): Action[A] = new Action[A] {
     def run(implicit s: Session): Process[A] = f(s)
@@ -39,38 +52,48 @@ trait CQLActions { this: Qeduce with CQLTypes =>
 
   def action(q: Query): Action[Int] = action(q, count)
 
-  def action[S](q: Query, f: Reducer[Row, S]): Action[S] = action {
+  def action[S](query: Query, f: Reducer[Row, S]): Action[S] = action {
     session =>
-      session.prepare(q.parts.mkString("?")) >>= {
-        statement =>
+      bindAndExecute(session, query) >>= {
+        result =>
+          import result._
+          import f._
 
-          val prepared = statement.bind()
-          for((p, i) <- q.params.zipWithIndex)
-            p.sqlType.inject(prepared, i, p.value)
+          @annotation.tailrec
+          def exhaustPage(s: State): State =
+            if(isReduced(s) || getAvailableWithoutFetching == 0) s
+            else exhaustPage(f(s, one()))
 
-          session.execute(prepared) >>= {
-            result =>
-              import result._
-              import f._
-
-              @annotation.tailrec
-              def exhaustPage(s: State): State =
-                if(isReduced(s) || getAvailableWithoutFetching == 0) s
-                else exhaustPage(f(s, one()))
-
-              def loop(s0: f.State): Process[S] = {
-                val s = exhaustPage(s0)
-                if(isReduced(s) || isExhausted) stop(complete(s))
-                else futureStep(fetchMoreResults) >> loop(s)
-              }
-
-              loop(init)
+          def loop(s0: f.State): Process[S] = {
+            val s = exhaustPage(s0)
+            if(isReduced(s) || isExhausted) stop(complete(s))
+            else futureStep(fetchMoreResults) >> loop(s)
           }
+
+          loop(init)
       }
   }
 
-  def consumeConnection[A](aa: Action[A]): Action[A] = action {
-    c => aa.run(c) >>= { a => c.close >> stop(a) }
+  def batched[S](query: Query, f: Reducer[Row, S]): Action[Series[S]] = action {
+    session =>
+      bindAndExecute(session, query) >>= {
+        result =>
+          import result._
+          import f._
+
+          @annotation.tailrec
+          def batch(s: State): S =
+            if(isReduced(s) || getAvailableWithoutFetching == 0) complete(s)
+            else batch(f(s, one()))
+
+          def loop: Generator[S] = {
+            if(isExhausted) Generator()
+            else if(getAvailableWithoutFetching > 0) Generator(batch(init), loop)
+            else futureStep(fetchMoreResults) >> loop
+          }
+
+          loop
+      }
   }
 
   object directExecutor extends Executor {
