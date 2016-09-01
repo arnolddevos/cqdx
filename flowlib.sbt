@@ -1,1 +1,1 @@
-libraryDependencies += "com.bgsig" %% "flowlib" % "0.9-22-gdeb19db"
+libraryDependencies += "com.bgsig" %% "flowlib" % "0.9-24-gef47c43"
