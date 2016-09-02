@@ -2,6 +2,7 @@ package qeduce
 package cql
 
 import com.datastax.driver.core
+import java.util.Date
 
 trait CQLTypes { this: Qeduce =>
 
@@ -24,6 +25,12 @@ trait CQLTypes { this: Qeduce =>
   implicit object cqlLong extends CQLType[Long] {
     def extract = _ getLong _
     def inject = _.setLong(_, _)
+    def display = _.toString
+  }
+
+  implicit object cqlTimestamp extends CQLType[Date] {
+    def extract = _ getTimestamp _
+    def inject = _.setTimestamp(_, _)
     def display = _.toString
   }
 
