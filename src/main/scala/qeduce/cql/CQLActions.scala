@@ -86,9 +86,16 @@ trait CQLActions { this: Qeduce with CQLTypes =>
             if(isReduced(s) || getAvailableWithoutFetching == 0) complete(s)
             else batch(f(s, one()))
 
+          def batchAndPrefetch: S = {
+            val s = batch(init)
+            if(getAvailableWithoutFetching == 0 && ! isExhausted)
+              fetchMoreResults
+            s
+          }
+
           def loop: Generator[S] = {
             if(isExhausted) Generator()
-            else if(getAvailableWithoutFetching > 0) Generator(batch(init), loop)
+            else if(getAvailableWithoutFetching > 0) Generator(batchAndPrefetch, loop)
             else futureStep(fetchMoreResults) >> loop
           }
 
