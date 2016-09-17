@@ -1,7 +1,7 @@
 package qeduce
 package cql
 
-import transducers.{Reducer, count}
+import transducers.api.{Reducer, count}
 import flowlib._
 import Process._
 import Generators._
