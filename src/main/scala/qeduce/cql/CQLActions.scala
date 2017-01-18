@@ -8,6 +8,7 @@ import Generators._
 
 import com.datastax.driver.core
 import scala.collection.mutable.{Map => MutMap}
+import scala.util.control.NonFatal
 
 import com.google.common.util.concurrent.ListenableFuture
 import java.util.concurrent.Executor
@@ -107,12 +108,16 @@ trait CQLActions { this: Qeduce with CQLTypes =>
     def execute(r: Runnable) = r.run()
   }
 
-  def futureStep[T]( step: => ListenableFuture[T]): Process[T] = waitFor {
-    k =>
-      val f = step
-      val r = new Runnable {
-        def run = k(f.get())
-      }
-      f.addListener(r, directExecutor)
-  }
+  def futureStep[T]( step: => ListenableFuture[T]): Process[T] =
+    waitFor[Process[T]] {
+      k =>
+        val f = step
+        val r = new Runnable {
+          def run = k {
+            try { stop(f.get) }
+            catch { case NonFatal(e) => fail("cql error", e) }
+          }
+        }
+        f.addListener(r, directExecutor)
+    } >>= identity
 }
