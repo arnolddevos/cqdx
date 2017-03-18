@@ -4,7 +4,7 @@ package cql
 import transducers.api.{Reducer, count}
 import flowlib._
 import Process._
-import Generators._
+import Producers._
 
 import com.datastax.driver.core
 import scala.collection.mutable.{Map => MutMap}
