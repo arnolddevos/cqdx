@@ -94,9 +94,9 @@ trait CQLActions { this: Qeduce with CQLTypes =>
             s
           }
 
-          def loop: Generator[S] = {
-            if(isExhausted) Generator()
-            else if(getAvailableWithoutFetching > 0) Generator(batchAndPrefetch, loop)
+          def loop: Producer[S] = {
+            if(isExhausted) Producer()
+            else if(getAvailableWithoutFetching > 0) Producer(batchAndPrefetch, loop)
             else futureStep(fetchMoreResults) >> loop
           }
 
