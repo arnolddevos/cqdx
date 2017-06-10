@@ -1,1 +1,1 @@
-libraryDependencies += "com.bgsig" %% "qeduce" % "0.4.6.gfb066aa"
+libraryDependencies += "com.bgsig" %% "qeduce" % "0.4.7.g1f7421c"
