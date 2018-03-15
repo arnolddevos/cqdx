@@ -2,4 +2,6 @@ name := "cqdx"
 
 organization := "com.bgsig"
 
-enablePlugins(DottedGitVersioning)
+enablePlugins(GitVersioning)
+
+git.useGitDescribe := true
